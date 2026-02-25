@@ -7,7 +7,7 @@
 # Flags:
 #   --dry-run    Print commands without executing them (for testing output)
 #
-# Tested on:
+# Distribution Compatibility:
 #   Raspberry Pi OS (recommended)
 #   Should work on any Debian/Ubuntu-based system.
 #   Other distros: apt-get steps may need manual intervention.
