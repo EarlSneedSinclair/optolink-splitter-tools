@@ -2,8 +2,8 @@
 # Copyright 2025-2026 EarlSneedSinclair
 #
 # SETUP:
-#   cp tools_manager.conf.example tools_manager.conf
-#   Then edit tools_manager.conf to match your setup.
+#   cp tools_ols_manager.conf.example tools_ols_manager.conf
+#   Then edit tools_ols_manager.conf to match your setup.
 #
 # NOTE:
 #   The example file might be updated and shows all available settings.
