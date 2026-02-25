@@ -5,9 +5,9 @@
 # Version: 1.4
 #
 # Usage:
-#   chmod +x tools_backup_update.sh
-#   ./tools_backup_update.sh           # Interactive menu
-#   ./tools_backup_update.sh --dry-run # Only check, no changes
+#   chmod +x tools_ols_backup_update.sh
+#   ./tools_ols_backup_update.sh           # Interactive menu
+#   ./tools_ols_backup_update.sh --dry-run # Only check, no changes
 #
 # Requirements:
 #   - This script is located in the Optolink directory (next to settings_ini.py)
