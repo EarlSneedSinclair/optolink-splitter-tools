@@ -5,8 +5,8 @@
 # Version: 1.0
 #
 # Usage:
-#   chmod +x tools_manager.sh
-#   ./tools_manager.sh
+#   chmod +x tools_ols_manager.sh
+#   ./tools_ols_manager.sh
 #
 # Description:
 #   Interactive service manager for optolink-splitter
