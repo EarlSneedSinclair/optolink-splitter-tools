@@ -13,8 +13,8 @@
 #   Other distros: apt-get steps may need manual intervention.
 #
 # Usage:
-#   chmod +x install.sh
-#   sudo ./install.sh
+#   chmod +x tools_ols_install.sh
+#   sudo ./tools_ols_install.sh
 #
 # Description:
 #   Interactive step-by-step installer for optolink-splitter.
