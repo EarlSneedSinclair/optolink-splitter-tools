@@ -2,8 +2,8 @@
 # Copyright 2025-2026 EarlSneedSinclair
 #
 # SETUP:
-#   cp tools_backup_update.conf.example tools_backup_update.conf
-#   Then edit tools_backup_update.conf to match your setup.
+#   cp tools_ols_backup_update.conf.example tools_ols_backup_update.conf
+#   Then edit tools_ols_backup_update.conf to match your setup.
 #
 # NOTE:
 # The example file might be updated and shows all available settings.
