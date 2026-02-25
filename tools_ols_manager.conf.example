@@ -1,0 +1,16 @@
+# Optolink-Splitter Manager Configuration
+# Copyright 2025-2026 EarlSneedSinclair
+#
+# SETUP:
+#   cp tools_manager.conf.example tools_manager.conf
+#   Then edit tools_manager.conf to match your setup.
+#
+# NOTE:
+#   The example file might be updated and shows all available settings.
+#   If the Manager does not launch, compare it with your personal .conf
+#   to check for new variables.
+
+SERVICE_NAME="optolink-splitter.service"   # systemd service name (Default: optolink-splitter.service)
+VENV_DIR="myvenv"                          # virtual environment directory (Default: myvenv)
+OLS_FILE="optolinkvs2_switch.py"           # script to run for manual start (Default: optolinkvs2_switch.py)
+LOG_LINES=100                              # default number of log lines to show (Default: 100)

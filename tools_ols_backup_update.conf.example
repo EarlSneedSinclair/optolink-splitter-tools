@@ -1,0 +1,37 @@
+# Optolink-Splitter Backup & Update Configuration
+# Copyright 2025-2026 EarlSneedSinclair
+#
+# SETUP:
+#   cp tools_backup_update.conf.example tools_backup_update.conf
+#   Then edit tools_backup_update.conf to match your setup.
+#
+# NOTE:
+# The example file might be updated and shows all available settings.
+# If the Backup & Restore does not launch please compare it with your personal  .conf to check for new variables.
+
+SERVICE_NAME="optolink-splitter.service"   # systemd service name (Default: optolink-splitter.service)
+GITHUB_USER="philippoo66"                  # GitHub username (Default: philippoo66)
+GITHUB_REPO="optolink-splitter"            # GitHub repository (Default: optolink-splitter)
+GITHUB_BRANCH="main"                       # branch (Default: main)
+MAX_BACKUPS=10                             # backup copies to keep; oldest deleted automatically (Default: 10)
+BACKUP_BASE_DIR=""                         # backup storage dir; empty = backup beside install dir (Default: "")
+TMP_DIR="/tmp/optolink-splitter-update"    # temp dir for download; auto-deleted (Default: /tmp/optolink-splitter-update)
+
+# Files and directories that will never be touched by updates.
+# Wildcards are supported (e.g. "*.log", "backup_*").
+#
+# ALL FILES AND DIRECTORIES NOT IN THIS LIST CAN BE DELETED DURING UPDATE
+#
+
+EXCLUDE_PATTERNS=(
+    ### DEFAULT FILES - Remove with caution ###
+    "tools_backup_update.conf"             # this config file
+    "myvenv"                               # virtual environment; many files, large size
+    "__pycache__"                          # cache; many files, large size
+    "settings_ini.py"                      # Optolink-Splitter general config
+    "poll_list.py"                         # Optolink-Splitter poll list
+    "ha_shared_config.py"                  # Deprecated: shared Home Assistant config
+    "homeassistant_poll_list.py"           # Home Assistant shared poll list
+    ### ADD YOUR FILES HERE ###
+
+)
