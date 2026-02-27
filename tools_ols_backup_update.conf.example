@@ -32,7 +32,7 @@ EXCLUDE_PATTERNS=(
     "poll_list.py"                         # Optolink-Splitter poll list
     "ha_shared_config.py"                  # Deprecated: shared Home Assistant config
     "homeassistant_poll_list.py"           # Home Assistant shared poll list
-    "install.log"                          # Optolink Splitter Installer log file
+    "*.log"                                # Log files (e.g. install-optolink-splitter.log)
     ### ADD YOUR FILES HERE ###
 
 )
