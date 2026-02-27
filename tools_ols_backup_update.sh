@@ -758,15 +758,42 @@ do_update() {
     echo ""
     echo "Installation directory: ${INSTALL_DIR}"
     if [[ "$HAS_SERVICE" == true ]]; then
-        printf "Service:                %s\n" "$(service_status)"
+        printf "Service:               %s\n" "$(service_status)"
     fi
-    echo "Repository:             ${GITHUB_USER}/${GITHUB_REPO}"
-    echo "Branch:                 ${GITHUB_BRANCH}"
+    printf "Repository:            %s/%s\n" "$GITHUB_USER" "$GITHUB_REPO"
+    printf "Branch:                %s\n" "$GITHUB_BRANCH"
+    echo ""
+    printf "Latest backup:         %s\n" "$(latest_backup_date)"
     if [[ "$DRY_RUN" == true ]]; then
         echo ""
         echo "*** DRY RUN MODE - No changes will be made ***"
     fi
     echo ""
+
+    if [[ "$DRY_RUN" != true ]]; then
+        read -n1 -s -p "==> Create a backup before updating? (recommended) [Y/n/q]: " backup_choice
+        echo ""
+        case "${backup_choice}" in
+            q|Q)
+                echo "Update cancelled."
+                read -n1 -s -p "Press any key to continue..." && echo ""
+                return
+                ;;
+            n|N)
+                echo "    Skipping backup."
+                ;;
+            *)
+                echo ""
+                local BACKUP_DIR="${BACKUP_PREFIX}$(date +%Y%m%d_%H%M%S)"
+                echo "==> Creating backup..."
+                mkdir -p "${BACKUP_DIR}"
+                rsync -a "${INSTALL_DIR}/" "${BACKUP_DIR}/"
+                echo "    ✓ Backup created: ${BACKUP_DIR}"
+                cleanup_old_backups
+                ;;
+        esac
+        echo ""
+    fi
 
     check_network
 
@@ -958,14 +985,6 @@ do_update() {
     echo "Protected files (unchanged):"
     echo "  $(format_exclude_list)"
     echo ""
-
-    # Backup hint
-    local n_backups
-    n_backups="$(count_backups)"
-    if [[ $n_backups -eq 0 ]]; then
-        echo "⚠ No backups exist. Consider creating one first (menu option 2)."
-        echo ""
-    fi
 
     echo "──────────────────────────────────────────"
     echo ""
