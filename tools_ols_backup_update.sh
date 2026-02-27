@@ -315,11 +315,16 @@ check_network() {
 }
 
 get_latest_commit() {
-    wget -q -O - "${GITHUB_API_URL}/commits/${GITHUB_BRANCH}" 2>/dev/null \
+    local sha
+    sha=$(wget -q -O - "${GITHUB_API_URL}/commits/${GITHUB_BRANCH}" 2>/dev/null \
         | grep -m1 '"sha"' \
         | sed 's/.*"sha": *"\([^"]*\)".*/\1/' \
-        | cut -c1-12 \
-        || echo "unknown"
+        | cut -c1-12) || true
+    if [[ -n "$sha" ]]; then
+        echo "$sha"
+    else
+        echo "unknown"
+    fi
 }
 
 build_rsync_excludes() {
@@ -591,6 +596,8 @@ show_main_menu() {
     echo "  Optolink-Splitter Backup & Update"
     echo "========================================"
     echo ""
+    printf "Service:      %s\n" "$(service_status)"
+    echo ""
     printf "Backups:      %s / %s\n" "$n_backups" "$MAX_BACKUPS"
     printf "Latest:       %s\n" "$latest_date"
     echo ""
@@ -598,7 +605,7 @@ show_main_menu() {
     printf "Branch:       %s\n" "$GITHUB_BRANCH"
     echo "Protected"
     printf "from update:  %s files/patterns\n" "${#EXCLUDE_PATTERNS[@]}"
-    printf "Service:      %s\n" "$(service_status)"
+    echo ""
     echo ""
     echo "1) Create backup"
     echo "2) List backups"
