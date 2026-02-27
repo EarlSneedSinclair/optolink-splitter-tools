@@ -2,18 +2,18 @@
 # tools_backup_update.sh
 # Optolink-Splitter Backup & Update
 # Copyright 2025-2026 EarlSneedSinclair
-# Version: 1.4
+# Version: 1.7
 #
 # Usage:
-#   chmod +x tools_ols_backup_update.sh
-#   ./tools_ols_backup_update.sh           # Interactive menu
-#   ./tools_ols_backup_update.sh --dry-run # Only check, no changes
+#   chmod +x tools_backup_update.sh
+#   ./tools_backup_update.sh           # Interactive menu
+#   ./tools_backup_update.sh --dry-run # Only check, no changes
 #
 # Requirements:
 #   - This script is located in the Optolink directory (next to settings_ini.py)
 #   - Config file: tools_backup_update.conf (same directory)
 #   - Packages: wget, tar, rsync
-#   - systemd service name: optolink-splitter.service
+#   - Optional: systemd service (works without)
 
 set -euo pipefail
 
@@ -31,7 +31,6 @@ CONF_EXAMPLE="${SCRIPT_DIR}/tools_ols_backup_update.conf.example"
 # =====================================
 
 CONF_VARS=(
-    SERVICE_NAME
     GITHUB_USER
     GITHUB_REPO
     GITHUB_BRANCH
@@ -81,6 +80,14 @@ check_conf() {
     REPO_TAR_URL="https://github.com/${GITHUB_USER}/${GITHUB_REPO}/archive/refs/heads/${GITHUB_BRANCH}.tar.gz"
     GITHUB_API_URL="https://api.github.com/repos/${GITHUB_USER}/${GITHUB_REPO}"
     TAR_FILE="${TMP_DIR}/optolink-splitter.tar.gz"
+
+    # Detect service availability (SERVICE_NAME is optional in conf)
+    HAS_SERVICE=false
+    if [[ -n "${SERVICE_NAME:-}" ]] && command -v systemctl &>/dev/null && systemctl --version &>/dev/null 2>&1; then
+        if systemctl list-unit-files "${SERVICE_NAME}" &>/dev/null 2>&1; then
+            HAS_SERVICE=true
+        fi
+    fi
 }
 
 # =====================================
@@ -90,6 +97,7 @@ check_conf() {
 INSTALL_DIR="${SCRIPT_DIR}"
 LOCK_FILE="/tmp/optolink-update.lock"
 DRY_RUN=false
+HAS_SERVICE=false
 
 if [[ "${EUID}" -eq 0 ]]; then
     SUDO=""
@@ -97,11 +105,79 @@ else
     SUDO="sudo"
 fi
 
+# Colors (only if terminal)
+if [[ -t 1 ]]; then
+    C_RESET=$'\033[0m'
+    C_RED=$'\033[31m'
+    C_GREEN=$'\033[32m'
+    C_YELLOW=$'\033[33m'
+    C_DIM=$'\033[2m'
+else
+    C_RESET="" ; C_RED="" ; C_GREEN="" ; C_YELLOW="" ; C_DIM=""
+fi
+
+# =====================================
+# Service helpers
+# =====================================
+
+service_status() {
+    if [[ "$HAS_SERVICE" == true ]]; then
+        local active
+        active="$(systemctl is-active "${SERVICE_NAME}" 2>/dev/null || echo "unknown")"
+        case "$active" in
+            active)   printf "%s%s (%s%s%s)%s" "${SERVICE_NAME}" "" "$C_GREEN" "active" "$C_RESET" "" ;;
+            inactive) printf "%s (%s%s%s)" "${SERVICE_NAME}" "$C_YELLOW" "inactive" "$C_RESET" ;;
+            failed)   printf "%s (%s%s%s)" "${SERVICE_NAME}" "$C_RED" "failed" "$C_RESET" ;;
+            *)        printf "%s (%s%s%s)" "${SERVICE_NAME}" "$C_DIM" "$active" "$C_RESET" ;;
+        esac
+    else
+        echo "(none configured)"
+    fi
+}
+
+service_status_plain() {
+    if [[ "$HAS_SERVICE" == true ]]; then
+        systemctl is-active "${SERVICE_NAME}" 2>/dev/null || echo "inactive"
+    else
+        echo "no service"
+    fi
+}
+
+service_stop() {
+    if [[ "$HAS_SERVICE" == true ]]; then
+        echo "==> Stopping service ${SERVICE_NAME}"
+        if ! ${SUDO} systemctl stop "${SERVICE_NAME}"; then
+            echo "ERROR: 'systemctl stop ${SERVICE_NAME}' failed."
+            return 1
+        fi
+    fi
+}
+
+service_start() {
+    if [[ "$HAS_SERVICE" == true ]]; then
+        echo "==> Starting service ${SERVICE_NAME}"
+        ${SUDO} systemctl start "${SERVICE_NAME}"
+        sleep 3
+        if systemctl is-active --quiet "${SERVICE_NAME}"; then
+            echo "✓ Service is running."
+        else
+            echo "✗ Service could not be started!"
+            echo ""
+            echo "Status:"
+            ${SUDO} systemctl status "${SERVICE_NAME}" --no-pager || true
+            echo ""
+            echo "Last logs:"
+            ${SUDO} journalctl -u "${SERVICE_NAME}" -n 20 --no-pager || true
+            return 1
+        fi
+    fi
+}
+
 # =====================================
 # Dependency & environment checks
 # =====================================
 
-REQUIRED_CMDS=(wget tar rsync systemctl journalctl)
+REQUIRED_CMDS=(wget tar rsync)
 
 check_dependencies() {
     local missing=()
@@ -120,21 +196,11 @@ check_dependencies() {
         echo "Install hint (Debian/Ubuntu/Raspbian):"
         for cmd in "${missing[@]}"; do
             case "$cmd" in
-                wget)       echo "  sudo apt install wget" ;;
-                tar)        echo "  sudo apt install tar" ;;
-                rsync)      echo "  sudo apt install rsync" ;;
-                systemctl)  echo "  systemctl is part of systemd – your system may not use systemd!" ;;
-                journalctl) echo "  journalctl is part of systemd – your system may not use systemd!" ;;
+                wget)  echo "  sudo apt install wget" ;;
+                tar)   echo "  sudo apt install tar" ;;
+                rsync) echo "  sudo apt install rsync" ;;
             esac
         done
-        exit 1
-    fi
-}
-
-check_systemd() {
-    if ! systemctl --version &>/dev/null 2>&1; then
-        echo "ERROR: systemd is not available or not running."
-        echo "       This script requires a systemd-based system."
         exit 1
     fi
 }
@@ -152,8 +218,8 @@ check_install_dir() {
 }
 
 cleanup() {
-    rm -f "${TAR_FILE}" 2>/dev/null || true
-    rm -rf "${TMP_DIR}" 2>/dev/null || true
+    [[ -n "${TAR_FILE:-}" ]]  && rm -f "${TAR_FILE}" 2>/dev/null || true
+    [[ -n "${TMP_DIR:-}" ]]   && rm -rf "${TMP_DIR}" 2>/dev/null || true
     rm -f "${LOCK_FILE}" 2>/dev/null || true
 }
 trap cleanup EXIT
@@ -277,6 +343,9 @@ analyse_changes() {
     FILES_DELETED=()
     PROTECTED_AFFECTED=()
 
+    # --- Run rsync dry-runs ---
+    # raw_all:      no excludes → detect all changes including protected ones
+    # raw_filtered: with excludes → actual changes to apply
     local raw_all
     raw_all=$(rsync -rnvc \
         --delete \
@@ -290,63 +359,75 @@ analyse_changes() {
         "${RSYNC_EXCLUDES[@]}" \
         "${new_dir}/" "${install_dir}/" 2>/dev/null || true)
 
-    while IFS= read -r line; do
-        [[ -z "$line" ]] && continue
-        local flag="${line:0:1}"
-        local type="${line:1:1}"
-        local extra="${line:2:9}"
-        local filename="${line:12}"
-        [[ "$type" == "d" ]] && continue
-        [[ -z "$filename" ]] && continue
-        [[ "$filename" == */ ]] && continue
+    # --- Parse helper: classify a single rsync itemize line ---
+    _item_action=""
+    _item_filename=""
 
-        if ! echo "$raw_filtered" | grep -qF "$filename"; then
-            local action=""
-            case "$flag" in
-                ">")
-                    if [[ "$extra" == "+++++++++" ]]; then
-                        action="new in update"
-                    else
-                        action="changed in update"
-                    fi
-                    ;;
-                "c") action="changed in update" ;;
-                "*")
-                    if [[ "${line:2:8}" == "deleting" ]]; then
-                        action="deleted in update"
-                    fi
-                    ;;
+    classify_rsync_line() {
+        _item_action=""
+        _item_filename=""
+        local line="$1"
+        [[ -z "$line" ]] && return
+
+        local flag="${line:0:1}"
+        local ftype="${line:1:1}"
+
+        # Deletion line: "*deleting"
+        if [[ "$flag" == "*" ]] && [[ "${line:1:8}" == "deleting" ]]; then
+            local rest="${line:9}"
+            rest="${rest#"${rest%%[! ]*}"}"   # ltrim spaces
+            [[ -z "$rest" ]] && return
+            _item_filename="$rest"
+            _item_action="deleted"
+            return
+        fi
+
+        # Skip directory entries and non-transfer lines
+        [[ "$ftype" == "d" ]] && return
+        [[ "$flag" != ">" ]] && [[ "$flag" != "c" ]] && return
+
+        # filename starts at position 12 (10 flag chars + space)
+        local filename="${line:12}"
+        [[ -z "$filename" ]] && return
+        [[ "$filename" == */ ]] && return  # trailing slash = directory
+
+        _item_filename="$filename"
+
+        local extra="${line:2:9}"
+        if [[ "$extra" == "+++++++++" ]]; then
+            _item_action="new"
+        else
+            _item_action="changed"
+        fi
+    }
+
+    # --- Pass 1: find protected files affected by this update ---
+    while IFS= read -r line; do
+        classify_rsync_line "$line"
+        [[ -z "$_item_action" ]] || [[ -z "$_item_filename" ]] && continue
+
+        # Check whether this file is excluded: must match in raw_all but not raw_filtered
+        # Use line-anchored grep to avoid substring false positives
+        if ! echo "$raw_filtered" | grep -qxF "${line}"; then
+            local desc=""
+            case "$_item_action" in
+                new)     desc="new in update" ;;
+                changed) desc="changed in update" ;;
+                deleted) desc="deleted in update" ;;
             esac
-            if [[ -n "$action" ]]; then
-                PROTECTED_AFFECTED+=("$filename ($action)")
-            fi
+            PROTECTED_AFFECTED+=("${_item_filename} (${desc})")
         fi
     done <<< "$raw_all"
 
+    # --- Pass 2: collect actual changes (excludes applied) ---
     while IFS= read -r line; do
-        [[ -z "$line" ]] && continue
-        local flag="${line:0:1}"
-        local type="${line:1:1}"
-        local extra="${line:2:9}"
-        local filename="${line:12}"
-        [[ "$type" == "d" ]] && continue
-        [[ -z "$filename" ]] && continue
-        [[ "$filename" == */ ]] && continue
+        classify_rsync_line "$line"
+        [[ -z "$_item_action" ]] || [[ -z "$_item_filename" ]] && continue
 
-        case "$flag" in
-            ">")
-                if [[ "$extra" == "+++++++++" ]]; then
-                    FILES_NEW+=("$filename")
-                else
-                    FILES_CHANGED+=("$filename")
-                fi
-                ;;
-            "c") FILES_CHANGED+=("$filename") ;;
-            "*")
-                if [[ "${line:2:8}" == "deleting" ]]; then
-                    FILES_DELETED+=("$filename")
-                fi
-                ;;
+        case "$_item_action" in
+            new)     FILES_NEW+=("$_item_filename") ;;
+            changed) FILES_CHANGED+=("$_item_filename") ;;
+            deleted) FILES_DELETED+=("$_item_filename") ;;
         esac
     done <<< "$raw_filtered"
 }
@@ -428,6 +509,79 @@ apply_changes() {
     echo "  Summary: $copied copied, $deleted deleted, $skipped skipped"
 }
 
+format_exclude_list() {
+    local result=""
+    local count=${#EXCLUDE_PATTERNS[@]}
+    if [[ $count -eq 0 ]]; then
+        echo "(none)"
+        return
+    fi
+    for ((i=0; i<count && i<3; i++)); do
+        [[ -n "$result" ]] && result+=", "
+        result+="${EXCLUDE_PATTERNS[$i]}"
+    done
+    if [[ $count -gt 3 ]]; then
+        result+=", ... (${count} total)"
+    fi
+    echo "$result"
+}
+
+show_protected_summary() {
+    # Group affected files by their matching exclude pattern
+    declare -A _prot_pattern_counts
+    declare -A _prot_pattern_actions
+    local _prot_ungrouped=()
+
+    for item in "${PROTECTED_AFFECTED[@]}"; do
+        local fname="${item%% (*}"    # strip " (changed in update)" etc.
+        local action="${item##* (}"   # e.g. "changed in update)"
+        action="${action%)}"          # strip trailing )
+        local matched=false
+
+        for pattern in "${EXCLUDE_PATTERNS[@]}"; do
+            local pat_clean="${pattern%/}"
+            if [[ "$fname" == "$pat_clean" ]] || [[ "$fname" == "$pat_clean/"* ]]; then
+                _prot_pattern_counts["$pattern"]=$(( ${_prot_pattern_counts["$pattern"]:-0} + 1 ))
+                if [[ ! "${_prot_pattern_actions["$pattern"]:-}" == *"$action"* ]]; then
+                    _prot_pattern_actions["$pattern"]="${_prot_pattern_actions["$pattern"]:-}${_prot_pattern_actions["$pattern"]:+, }${action}"
+                fi
+                matched=true
+                break
+            fi
+            # shellcheck disable=SC2254
+            if [[ "$fname" == $pattern ]]; then
+                _prot_pattern_counts["$pattern"]=$(( ${_prot_pattern_counts["$pattern"]:-0} + 1 ))
+                if [[ ! "${_prot_pattern_actions["$pattern"]:-}" == *"$action"* ]]; then
+                    _prot_pattern_actions["$pattern"]="${_prot_pattern_actions["$pattern"]:-}${_prot_pattern_actions["$pattern"]:+, }${action}"
+                fi
+                matched=true
+                break
+            fi
+        done
+
+        if [[ "$matched" == false ]]; then
+            _prot_ungrouped+=("$item")
+        fi
+    done
+
+    for pattern in "${EXCLUDE_PATTERNS[@]}"; do
+        local count="${_prot_pattern_counts["$pattern"]:-0}"
+        [[ $count -eq 0 ]] && continue
+        local actions="${_prot_pattern_actions["$pattern"]}"
+        if [[ $count -eq 1 ]]; then
+            echo "  ⚠ ${pattern} (${actions})"
+        else
+            echo "  ⚠ ${pattern} (${count} files; ${actions})"
+        fi
+    done
+
+    for item in "${_prot_ungrouped[@]}"; do
+        echo "  ⚠ $item"
+    done
+
+    unset _prot_pattern_counts _prot_pattern_actions
+}
+
 show_main_menu() {
     local n_backups latest_date
     n_backups="$(count_backups)"
@@ -437,20 +591,22 @@ show_main_menu() {
     echo "  Optolink-Splitter Backup & Update"
     echo "========================================"
     echo ""
-    echo "Repository: ${GITHUB_USER}/${GITHUB_REPO}"
-    echo "Branch:     ${GITHUB_BRANCH}"
-    echo "Protected:  ${#EXCLUDE_PATTERNS[@]} files/patterns"
+    printf "Backups:      %s / %s\n" "$n_backups" "$MAX_BACKUPS"
+    printf "Latest:       %s\n" "$latest_date"
     echo ""
-    echo "Backups:    ${n_backups} / ${MAX_BACKUPS}"
-    echo "Latest:     ${latest_date}"
+    printf "Repository:   %s/%s\n" "$GITHUB_USER" "$GITHUB_REPO"
+    printf "Branch:       %s\n" "$GITHUB_BRANCH"
+    echo "Protected"
+    printf "from update:  %s files/patterns\n" "${#EXCLUDE_PATTERNS[@]}"
+    printf "Service:      %s\n" "$(service_status)"
     echo ""
-    echo "1) Update from GitHub"
-    echo "2) Create backup"
-    echo "3) List backups"
-    echo "4) Restore backup"
+    echo "1) Create backup"
+    echo "2) List backups"
+    echo "3) Restore backup"
+    echo ""
+    echo "4) Update from GitHub"
     echo ""
     echo "s) Settings"
-    echo ""
     echo "q) Quit"
     echo ""
     read -n1 -s -p "Select option [1-4, s, q]: " MENU_CHOICE
@@ -562,7 +718,11 @@ do_restore() {
     echo ""
     echo "Selected: ${selected_date}"
     echo ""
-    echo "⚠ This will stop the service and overwrite current files."
+    if [[ "$HAS_SERVICE" == true ]]; then
+        echo "⚠ This will stop the service and overwrite current files."
+    else
+        echo "⚠ This will overwrite current files."
+    fi
     read -n1 -s -p "Continue? [y/N]: " confirm
     echo ""
     if [[ "$confirm" != "y" ]] && [[ "$confirm" != "Y" ]]; then
@@ -572,20 +732,12 @@ do_restore() {
     fi
 
     echo ""
-    echo "==> Stopping service ${SERVICE_NAME}"
-    ${SUDO} systemctl stop "${SERVICE_NAME}" || true
+    service_stop || true
     echo "==> Restoring backup..."
     rsync -av --delete "${selected_backup}/" "${INSTALL_DIR}/"
-    echo "==> Starting service ${SERVICE_NAME}"
-    ${SUDO} systemctl start "${SERVICE_NAME}"
-    sleep 3
+    service_start || true
     echo ""
-    if systemctl is-active --quiet "${SERVICE_NAME}"; then
-        echo "✓ Restore successful! Service is running."
-    else
-        echo "⚠ WARNING: Service is not running!"
-        ${SUDO} systemctl status "${SERVICE_NAME}" || true
-    fi
+    echo "✓ Restore complete."
     echo ""
     read -n1 -s -p "Press any key to continue..." && echo ""
 }
@@ -598,7 +750,9 @@ do_update() {
     echo "========================================"
     echo ""
     echo "Installation directory: ${INSTALL_DIR}"
-    echo "Service:                ${SERVICE_NAME}"
+    if [[ "$HAS_SERVICE" == true ]]; then
+        printf "Service:                %s\n" "$(service_status)"
+    fi
     echo "Repository:             ${GITHUB_USER}/${GITHUB_REPO}"
     echo "Branch:                 ${GITHUB_BRANCH}"
     if [[ "$DRY_RUN" == true ]]; then
@@ -638,39 +792,28 @@ do_update() {
 
     local total_changes=$(( ${#FILES_NEW[@]} + ${#FILES_CHANGED[@]} + ${#FILES_DELETED[@]} ))
 
-    echo ""
+    # Show protected files inline (grouped)
     if [[ ${#PROTECTED_AFFECTED[@]} -gt 0 ]]; then
-        echo "========================================"
-        echo "  Protected Files - Conflict Warning"
-        echo "========================================"
         echo ""
-        echo "⚠ The following protected files were skipped:"
-        echo ""
-        for item in "${PROTECTED_AFFECTED[@]}"; do
-            echo "  ✓ $item"
-        done
-        echo ""
-        echo "Your local versions remain untouched."
-        echo ""
-        read -n1 -s -p "Press any key to continue..." && echo ""
-        echo ""
+        echo "Protected files (skipped):"
+        show_protected_summary
     else
-        echo "Protected files: None affected by this update."
         echo ""
+        echo "Protected files: None affected by this update."
     fi
 
+    echo ""
     echo "──────────────────────────────────────────"
     echo "  Change summary"
     echo "──────────────────────────────────────────"
-    printf "  [+] New files:     %3d\n" "${#FILES_NEW[@]}"
-    printf "  [~] Changed files: %3d\n" "${#FILES_CHANGED[@]}"
-    printf "  [-] Deleted files: %3d\n" "${#FILES_DELETED[@]}"
+    printf "  [+] New files:        %3d\n" "${#FILES_NEW[@]}"
+    printf "  [~] Changed files:    %3d\n" "${#FILES_CHANGED[@]}"
+    printf "  [-] Removed in repo:  %3d\n" "${#FILES_DELETED[@]}"
     echo "──────────────────────────────────────────"
     echo ""
 
     if [[ $total_changes -eq 0 ]]; then
         echo "Everything is already up to date."
-        cleanup_old_backups
         echo ""
         read -n1 -s -p "Press any key to continue..." && echo ""
         return
@@ -688,11 +831,11 @@ do_update() {
             echo ""
         fi
         if [[ ${#FILES_DELETED[@]} -gt 0 ]]; then
-            echo "Deleted files:"
+            echo "Files removed from repo (would be deleted locally):"
             for f in "${FILES_DELETED[@]}"; do echo "  - $f"; done
             echo ""
         fi
-        echo "*** DRY RUN finished - no changes made ***"
+        echo "*** DRY RUN finished – no changes made ***"
         echo ""
         read -n1 -s -p "Press any key to continue..." && echo ""
         return
@@ -732,7 +875,7 @@ do_update() {
         echo ""
     fi
     if [[ ${#FILES_DELETED[@]} -gt 0 ]]; then
-        echo "Deleted files (${#FILES_DELETED[@]}):"
+        echo "Files no longer in repo – delete locally? (${#FILES_DELETED[@]}):"
         for f in "${FILES_DELETED[@]}"; do
             echo "  $idx) [DEL] $f"
             ((idx++))
@@ -806,8 +949,17 @@ do_update() {
     fi
 
     echo "Protected files (unchanged):"
-    echo "  ${EXCLUDE_PATTERNS[0]}, ${EXCLUDE_PATTERNS[1]}, ${EXCLUDE_PATTERNS[2]}, ..."
+    echo "  $(format_exclude_list)"
     echo ""
+
+    # Backup hint
+    local n_backups
+    n_backups="$(count_backups)"
+    if [[ $n_backups -eq 0 ]]; then
+        echo "⚠ No backups exist. Consider creating one first (menu option 2)."
+        echo ""
+    fi
+
     echo "──────────────────────────────────────────"
     echo ""
     read -n1 -s -p "Apply these changes? [Y/n]: " confirm
@@ -819,18 +971,9 @@ do_update() {
     fi
 
     echo ""
-    echo "==> Stopping service ${SERVICE_NAME}"
-    if ! ${SUDO} systemctl stop "${SERVICE_NAME}"; then
-        echo "ERROR: 'systemctl stop ${SERVICE_NAME}' failed."
+    if ! service_stop; then
         exit 1
     fi
-
-
-    local BACKUP_DIR="${BACKUP_PREFIX}$(date +%Y%m%d_%H%M%S)"
-    echo "==> Backing up ${INSTALL_DIR} to ${BACKUP_DIR}"
-    mkdir -p "${BACKUP_DIR}"
-    rsync -a --delete "${INSTALL_DIR}/" "${BACKUP_DIR}/"
-    cleanup_old_backups
 
     echo ""
     echo "==> Applying changes..."
@@ -838,37 +981,7 @@ do_update() {
     apply_changes "${NEW_DIR}" "${INSTALL_DIR}" COPY_SELECTED DELETE_SELECTED
 
     echo ""
-    echo "==> Restarting service ${SERVICE_NAME}"
-    ${SUDO} systemctl start "${SERVICE_NAME}"
-
-    if ! systemctl is-active --quiet "${SERVICE_NAME}"; then
-        echo "✗ Service could not be started!"
-        echo ""
-        echo "Status:"
-        ${SUDO} systemctl status "${SERVICE_NAME}" --no-pager || true
-        echo ""
-        echo "Last logs:"
-        ${SUDO} journalctl -u "${SERVICE_NAME}" -n 20 --no-pager || true
-        echo ""
-        read -n1 -s -p "Restore backup? [y/N]: " restore_confirm
-        echo ""
-        if [[ "$restore_confirm" == "y" ]] || [[ "$restore_confirm" == "Y" ]]; then
-            ${SUDO} systemctl stop "${SERVICE_NAME}" 2>/dev/null || true
-            rsync -av "${BACKUP_DIR}/" "${INSTALL_DIR}/"
-            ${SUDO} systemctl start "${SERVICE_NAME}"
-            echo ""
-            echo "Backup has been restored."
-            echo "Run 'journalctl -u ${SERVICE_NAME} -n 50' to investigate the issue."
-        else
-            echo ""
-            echo "Backup NOT restored. Service is still stopped."
-            echo "  Backup location: ${BACKUP_DIR}"
-            echo "  Check logs: journalctl -u ${SERVICE_NAME} -n 50"
-        fi
-        echo ""
-        read -n1 -s -p "Press any key to continue..." && echo ""
-        return
-    fi
+    service_start || true
 
     echo ""
     echo "========================================"
@@ -876,9 +989,9 @@ do_update() {
     echo "========================================"
     echo ""
     echo "New version : ${latest_version}"
-    echo "Backup      : ${BACKUP_DIR}"
-    echo ""
-    echo "Service status: $(systemctl is-active "${SERVICE_NAME}" 2>/dev/null || echo inactive)"
+    if [[ "$HAS_SERVICE" == true ]]; then
+        printf "Service:      %s\n" "$(service_status)"
+    fi
 
     # Warn if the script itself was updated
     local self_updated=false
@@ -905,8 +1018,11 @@ view_settings() {
     echo ""
     echo "Installation:"
     echo "  Directory : ${INSTALL_DIR}"
-    echo "  Service   : ${SERVICE_NAME}"
-    echo "  Status    : $(systemctl is-active "${SERVICE_NAME}" 2>/dev/null || echo inactive)"
+    if [[ "$HAS_SERVICE" == true ]]; then
+        printf "  Service   : %s\n" "$(service_status)"
+    else
+        echo "  Service   : (none configured)"
+    fi
     echo ""
     echo "GitHub:"
     echo "  User/Org  : ${GITHUB_USER}"
@@ -980,7 +1096,6 @@ done
 # Startup checks
 # =====================================
 check_dependencies
-check_systemd
 check_conf
 check_install_dir
 
@@ -997,10 +1112,10 @@ fi
 while true; do
     show_main_menu
     case $MENU_CHOICE in
-        1) do_update ;;
-        2) do_backup ;;
-        3) do_list_backups ;;
-        4) do_restore ;;
+        1) do_backup ;;
+        2) do_list_backups ;;
+        3) do_restore ;;
+        4) do_update ;;
         s|S) run_settings_menu ;;
         q|Q) clear; echo "Goodbye!"; exit 0 ;;
         *) ;;
