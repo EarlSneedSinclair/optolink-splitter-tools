@@ -5,8 +5,8 @@
 # Version: 1.0
 #
 # Usage:
-#   chmod +x tools_ols_manager.sh
-#   ./tools_ols_manager.sh
+#   chmod +x tools_manager.sh
+#   ./tools_manager.sh
 #
 # Description:
 #   Interactive service manager for optolink-splitter
@@ -206,13 +206,14 @@ menu_main() {
   echo "Status:  ${summary}"
   echo ""
   echo "1) Logs            (submenu)"
+  echo ""
   echo "2) Service Control (submenu: restart/start/stop/...)"
   echo "3) Service Info    (submenu: status/errors)"
+  echo ""
   echo "4) Manual Start    (exits menu → starts splitter (venv))"
   echo "5) Venv Shell      (exits menu → enters venv shell)"
   echo ""
   echo "s) Settings        (submenu: view/edit)"
-  echo ""
   echo "q) Quit"
   echo
 }
@@ -284,9 +285,9 @@ menu_service() {
   echo "Service: ${SERVICE_NAME}"
   echo "Status:  ${summary}"
   echo ""
-  echo "1) Restart"
-  echo "2) Start"
-  echo "3) Stop"
+  echo "1) Start"
+  echo "2) Stop"
+  echo "3) Restart"
   echo ""
   echo "4) Enable"
   echo "5) Disable"
@@ -303,9 +304,9 @@ run_service_menu() {
 
     case "$opt" in
       q|Q) return 0 ;;
-      1) sc_safe restart "$SERVICE_NAME" ;;
-      2) sc_safe start   "$SERVICE_NAME" ;;
-      3) sc_safe stop    "$SERVICE_NAME" ;;
+      1) sc_safe start   "$SERVICE_NAME" ;;
+      2) sc_safe stop    "$SERVICE_NAME" ;;
+      3) sc_safe restart "$SERVICE_NAME" ;;
       4) sc_safe enable  "$SERVICE_NAME" ;;
       5) sc_safe disable "$SERVICE_NAME" ;;
       *)
